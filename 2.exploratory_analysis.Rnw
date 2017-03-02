@@ -1,0 +1,146 @@
+\documentclass{article}
+
+\title{Principal component analysis, generate Figure 1 and S2 Table}
+
+\begin{document}
+
+\maketitle
+
+<<>>=
+opts_chunk$set(echo=TRUE, fig.path='figures/', cache=FALSE)
+@
+
+\section{Load all libraries, functions, and data}
+
+Load everything, check structure of data objects:
+<<loadAndSource, echo=TRUE>>=
+library(ggplot2)
+library(reshape2)
+library(genefilter)
+library(RColorBrewer) 
+library(xtable)
+
+source("functions.R")
+
+load("MasterFrame.RData")
+@
+
+\section{Principal components analysis}
+
+First perform PCA decomposition:
+<<PCA, echo=TRUE, fig.width=5, fig.height=5>>=
+pca <- prcomp(MasterFrame[,mets],
+              center=TRUE, scale=TRUE)$x
+dim(pca)
+@
+
+We also want to save the percent of the total variance that is explained by each component.
+<<getVarCompPC, echo=TRUE>>=
+##get variance of each component
+varComp <- diag(cov(pca))
+##get fraction of variance explained by each component
+varComp[1]/sum(varComp)
+varComp[2]/sum(varComp)
+##check this with the output from the R object:
+summary(prcomp(MasterFrame[,mets],
+               center=TRUE, scale=TRUE))$importance[,1:5]
+
+##add them to MasterFrame object, so it is easier to use aesthetics
+MasterFrame <- cbind(MasterFrame,
+                     pca[,1:5])
+@
+
+\subsection{Figure 1}
+
+Make PCA plots for age categories and sites side-by-side to generate Figure 1 from paper:
+<<Fig 1, fig.height=4, fig.width=12>>=
+ggPlot1 <- ggplot(MasterFrame, aes(x=PC1, y=PC2)) +
+  geom_point(size=2.2, aes(shape=Status, color=Category)) +
+  scale_color_discrete(name="Age category") +
+  scale_shape_manual(values=c(1,19), name="Disease status") +
+  xlab(paste("PC1 (", round(varComp[1]/sum(varComp)*100), "%)", sep="")) +
+  ylab(paste("PC2 (", round(varComp[2]/sum(varComp)*100), "%)", sep="")) +
+  theme(plot.title = element_text(size = 15, hjust = 0.5, vjust=1.5),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size=14),
+        axis.title = element_text(size=14)) +
+  guides(color = guide_legend(order=1),
+         shape = guide_legend(order=2)) +
+  ggtitle("a)")
+
+ggPlot2 <- ggplot(MasterFrame, aes(x=PC1, y=PC2)) +
+  geom_point(size=2.2, aes(color=Site, shape=Status)) +
+  scale_shape_manual(values=c(1,19), name="Disease status") +
+  xlab(paste("PC1 (", round(varComp[1]/sum(varComp)*100), "%)", sep="")) +
+  ylab(paste("PC2 (", round(varComp[2]/sum(varComp)*100), "%)", sep="")) +
+  theme(plot.title = element_text(size = 15, hjust = 0.5, vjust=1.5),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size=14),
+        axis.title = element_text(size=14)) +
+  guides(color = guide_legend(order=1),
+         shape = guide_legend(order=2)) +
+  ggtitle("b)")
+
+multiplot(ggPlot1, ggPlot2, cols=2)
+@
+
+\subsection{Association of PC1 with different variables}
+
+Look to see if PC1 is associated with DMD, age, their interaction, or study site:
+<<PC1assoc, echo=TRUE>>=
+##make a table for the results
+PC1.AIC.df <- 
+  data.frame(Model = c("DMD status, Age, (DMD status) x Age, Site",
+                       "DMD status, Age, (DMD status) x Age",
+                       "DMD status, Age, Site",
+                       "DMD status, Age",
+                       "Age, Site",
+                       "DMD status, Site",
+                       "DMD status",
+                       "Age",
+                       "Site"),
+             AIC.PC1 = c(AIC(lm(PC1 ~ Status*Age+Site, data=MasterFrame)),
+                         AIC(lm(PC1 ~ Status*Age, data=MasterFrame)),
+                         AIC(lm(PC1 ~ Status+Age+Site, data=MasterFrame)),
+                         AIC(lm(PC1 ~ Status+Age, data=MasterFrame)), 
+                         AIC(lm(PC1 ~ Age+Site, data=MasterFrame)), 
+                         AIC(lm(PC1 ~ Status+Site, data=MasterFrame)), 
+                         AIC(lm(PC1 ~ Status, data=MasterFrame)),
+                         AIC(lm(PC1 ~ Age, data=MasterFrame)),
+                         AIC(lm(PC1 ~ Site, data=MasterFrame))))
+PC1.AIC.df
+
+##get minimum AIC value
+argMinAIC1 <- which.min(PC1.AIC.df$AIC.PC1)
+##get information-theoretic interpretation
+PC1.AIC.df$probRatio1 <- exp((-PC1.AIC.df$AIC.PC1+PC1.AIC.df$AIC.PC1[argMinAIC1])/2)
+
+PC1.AIC.df <- PC1.AIC.df[,c("Model","AIC.PC1","probRatio1")]
+PC1.AIC.df[,-1] <- sapply(PC1.AIC.df[,-1], round, 2)
+PC1.AIC.df
+@
+
+\subsubsection{S2 Table}
+
+<<tabPC1, echo=TRUE, results='asis'>>=
+xtable(PC1.AIC.df[,1:3])
+@
+
+Look at the top model in more detail:
+
+<<topModelsPC1, echo=TRUE>>=
+topLM.PC1 <- lm(PC1 ~ Age+as.factor(Site), data=MasterFrame)
+summary(topLM.PC1)
+
+anova(lm(PC1 ~ Age+as.factor(Site), data=MasterFrame), 
+      lm(PC1 ~ Age, data=MasterFrame))
+@
+
+\section{Get session info}
+
+Session info:
+<<sessInfo, echo=TRUE>>=
+sessionInfo()
+@
+
+\end{document}
